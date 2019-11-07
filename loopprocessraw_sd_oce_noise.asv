@@ -202,8 +202,10 @@ for fileloop=[1]
     saveas(gcf,[filename(1:end-4),'_fig2.png'])
     
     %% Simple example to calculate decorrelation statistics
-    %time- dependent complex-valued autocorrelation of the signal (check
-    %this)
+    %we will need to greatly expand the processing in this section. This
+    %simply gives us an idea of where to start.....
+    
+    %time- dependent complex-valued autocorrelation of the signal
     [acf_img,lags_img,bounds_img] = autocorr(imgdifs,nt-1);
     [acf,lags,bounds] = autocorr(comp_surf,nt-1);
     [acf_phase,lags_phase,bounds_phase] = autocorr(ph_surf,nt-1);
@@ -221,7 +223,7 @@ for fileloop=[1]
     legend('real', 'phase','complex')
     
     saveas(gcf,[filename(1:end-4),'_fig3.png'])
-    %%
+    
     
     close all
 end

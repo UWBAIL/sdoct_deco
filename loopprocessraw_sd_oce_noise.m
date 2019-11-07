@@ -199,7 +199,7 @@ for fileloop=[1]
     cm=colorbar
     colormap(jet)
     title(cm,'counts')
-    saveas(gcf,[filename(1:end-4),'_fig2.png'])
+    %saveas(gcf,[filename(1:end-4),'_fig2.png'])
     
     %% Simple example to calculate decorrelation statistics
     %we will need to greatly expand the processing in this section. This
@@ -222,7 +222,8 @@ for fileloop=[1]
     title('autocorrelation function')
     legend('real', 'phase','complex')
     
-    saveas(gcf,[filename(1:end-4),'_fig3.png'])
+    %saveas(gcf,[filename(1:end-4),'_fig3.png'])
     
-    close all
+    
+    %close all
 end
