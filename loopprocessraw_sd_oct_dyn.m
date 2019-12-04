@@ -22,15 +22,16 @@ frameshift=1; %frameshift/fs will determine the maximum time lag (unit s)
 % A-Line scan rate (set on camera/LabView)
 fs=90000;
 
-% # of time-points (set in LabView)
-linenum=1500;
+% # of X-positions 
+linenum=800;
 
-% # of x-positions
-framenum=3;
-xloc=2; %location to analyze variance data
-
+% # of TIME positions
+framenum=800;
+xloc=50; %location to analyze variance data
+tloc=20;
 % # of active pixels on line-scan camera
-pixel=1024;
+%pixel=1024;
+pixel=2048;
 
 % Display range for log-compressed oct intensity data (leave for now)
 imgrg=[2.4 4.5];
@@ -46,14 +47,14 @@ brmap=[0 0.749019622802734 0.749019622802734;0 0.749019622802734 0.7490196228027
 % Initialize loop to load data in current directory
 fn=1;
 
-while exist([rawname,num2str(fn),'OMAG.oct'],'file'),
+while exist([rawname,num2str(fn),'.oct'],'file'),
     fn=fn+1;
 end;
 
 fn=fn-1;
 
 % Begin main loop
-for fileloop=[8]
+for fileloop=[7,8]
     
     %% Load data
     clear Frame phframe phframe_c
@@ -66,12 +67,14 @@ for fileloop=[8]
     lpcontrol=fileloop;
       
     %load data
-    filename=[rawname,num2str(lpcontrol),'noise.oct'];
+    filename=[rawname,num2str(lpcontrol),'.oct'];
     disp(['Extracting raw data....',rawname,num2str(lpcontrol)])
     
     % extract .oct data to complex array
     [Frame]=frameextractv5(pixel,coefs,filename,useref,refname,linenum,framenum);
-    [nz,nt,nx]=size(Frame);
+    
+    %
+    [nz,nx,nt]=size(Frame);
     
     %% Calculate intensity, phase, and complex arrays
     
@@ -80,7 +83,9 @@ for fileloop=[8]
     
     % log compress complex OCT data to generate OCT intensity array
     img=20*log10(abs(Frame));
-    img_xz=squeeze(img(:,10,:));
+    
+    % save a b-scan image for display
+    img_xz=squeeze(img(:,:,tloc));
     
     % test the intensity signal (SNR,resolution,etc)
     % Note:Need to do some sort of FWHM measurement, calibrate for dz, and
@@ -88,16 +93,20 @@ for fileloop=[8]
     ax=img_xz(:,2);
     z=(1:nz)*dz;
    
-    %% function to calculate surface for variance measurement
+    %% function to calculate surface location
+    img_xz_filt=medfilt2(img_xz,[1 10]);
+    img_xz_filt=medfilt2(img_xz_filt,[20 1]);
     windowlength=10; % set length of gaussian derivative to calculate surface signal
     maxjump=5; % max corresponding jump (used only when detecting 2D surface)
     minseg=5;% minimum distance to correct (used only when detecting 2D surface)
-    surface_z = sd_detect_surface(img_xz,windowlength, maxjump, minseg);
-    surface=round(surface_z(xloc));
+    surface_z = sd_detect_surface(img,img_xz_filt,windowlength, maxjump, minseg);
+    
+    
+    surface=round(surface_z(xloc))+10; % This looks at a location 10 pixels below the surface
     
     % Plot the surface detection
     figure;
-    subplot(211),imagesc(img_xz),hold on, plot(surface_z,'r.','MarkerSize',18)
+    subplot(211),imagesc(img_xz),hold on, plot(surface_z,'r.','MarkerSize',10)
     xlabel('x (pixels)')
     ylabel('z (pixels)')
     subplot(234),plot(img_xz(:,1),z*10^3),set(gca,'Ydir','reverse'),
@@ -105,17 +114,23 @@ for fileloop=[8]
     subplot(235),plot(img_xz(:,2),z*10^3),set(gca,'Ydir','reverse'),
     xlabel('log compressed intensity (a.u.)')
     subplot(236),plot(img_xz(:,3),z*10^3),set(gca,'Ydir','reverse'),
-    %saveas(gcf,[filename(1:end-4),'_fig1.png'])
+    suptitle('test surface detection')
+    saveas(gcf,[filename(1:end-4),'_fig1.png'])
     
     %% Compute Intensity Variation
     %chose surface location. Will probably do some averaging here later
-    img_surf=img(surface,:,xloc);
+    img_surf=squeeze(img(surface,xloc,:));
     
     %FIR differentiator
-    imgdif = img - circshift(img, -frameshift, 2);
-    
+    imgdif = img_surf - circshift(img_surf, -frameshift);
+    imgdifs=imgdif;
     %chose surface location. Will probably do some averaging here later
-    imgdifs=imgdif(surface,:,xloc);
+    %imgdifs=imgdif(surface,:,xloc);
+    
+%     %FIR differentiator
+%     imgdif = img - circshift(img, -frameshift, 2);
+%     %chose surface location. Will probably do some averaging here later
+%     imgdifs=imgdif(surface,:,xloc);
     
     % calculate variance metrics
     stdevimg=std(imgdifs);
@@ -124,19 +139,27 @@ for fileloop=[8]
       
     %% Compute Phase Variation
     %raw phase signal
-    phraw = angle(Frame);
-    
-    nt = size(Frame, 2);
+    %phraw = angle(Frame);
+    phraw = angle(squeeze(Frame(surface,xloc,:)));
+    phraw(phraw > pi) = phraw(phraw > pi) - 2*pi;
+    phraw(phraw < -pi) = phraw(phraw < -pi) + 2*pi;
+    %ph(:, (nt-frameshift+1):nt, :) = 0;
+    phraw((nt-frameshift+1):nt, :) = 0;
     
     % phase difference with basic unwrapping
-    ph = angle(Frame) - circshift(angle(Frame), -frameshift, 2);% Compute phase difference from OCT complex data
+    %ph = angle(Frame) - circshift(angle(Frame), -frameshift, 2);% Compute phase difference from OCT complex data
+    ph = (phraw) - circshift((phraw), -frameshift);% Compute phase difference from OCT complex data
     ph(ph > pi) = ph(ph > pi) - 2*pi;
     ph(ph < -pi) = ph(ph < -pi) + 2*pi;
-    ph(:, (nt-frameshift+1):nt, :) = 0;
+    %ph(:, (nt-frameshift+1):nt, :) = 0;
+    ph((nt-frameshift+1):nt, :) = 0;
+
     
     %chose surface location. Will probably do some averaging here later
-    phraw_surf=phraw(surface,:,xloc);
-    ph_surf=ph(surface,:,xloc);
+%    phraw_surf=phraw(surface,:,xloc);
+    phraw_surf=phraw;
+    %ph_surf=ph(surface,:,xloc);
+    ph_surf=ph;
     
     %calculate variance metrics
     stdev=std(ph_surf);
@@ -146,12 +169,13 @@ for fileloop=[8]
     
     %% Compute complex data (need to re-visit/expand this section)
     Frame_surf=Frame(surface,:,xloc);
-    comp = Frame - circshift(Frame, -frameshift, 2);
-    comp_surf=comp(surface,:,xloc);
+    %comp = Frame - circshift(Frame, -frameshift, 2);
+    comp = Frame_surf - circshift(Frame_surf, -frameshift);
+    comp_surf=comp;%(surface,:,xloc);
     comp_surfi=imag(comp_surf);
     comp_surfr=real(comp_surf);
     
-    %% Make Plots
+    %% Make Plots of signal histogram distributions
     time=(1:nt)*1/fs;
 
     fig1=figure;
@@ -201,31 +225,31 @@ for fileloop=[8]
     cm=colorbar;
     colormap(jet)
     title(cm,'counts')
-    %saveas(gcf,[filename(1:end-4),'_fig2.png'])
+    saveas(gcf,[filename(1:end-4),'_fig2.png'])
     
      %% Simple example to calculate decorrelation statistics
-%     %we will need to greatly expand the processing in this section. This
-%     %simply gives us an idea of where to start.....
-%     
-%     %time- dependent complex-valued autocorrelation of the signal
-%     [acf_img,lags_img,bounds_img] = autocorr(imgdifs,nt-1);
-%     [acf,lags,bounds] = autocorr(comp_surf,nt-1);
-%     [acf_phase,lags_phase,bounds_phase] = autocorr(ph_surf,nt-1);
-%     [acf,lags,bounds] = autocorr(comp_surf,nt-1);
-%     
-%     figure;
-%     set(gcf,'Position',[100 100 1000 600])
-%     plot(time*10^3,abs(acf_img),'r.--','MarkerSize',18),hold on
-%     plot(time*10^3,abs(acf_phase),'b.--','MarkerSize',18),
-%     plot(time*10^3,abs(acf),'k.--','MarkerSize',18),
-%     xlim([0 .5])
-%     xlabel('lags (time (ms))')
-%     ylabel('autocorrelation (r)')
-%     title('autocorrelation function')
-%     legend('real', 'phase','complex')
-%     
-%     %saveas(gcf,[filename(1:end-4),'_fig3.png'])
-%     
-%     
-%     %close all
+    %we will need to greatly expand the processing in this section. This
+    %simply gives us an idea of where to start.....
+    
+    %time- dependent complex-valued autocorrelation of the signal
+    [acf_img,lags_img,bounds_img] = autocorr(imgdifs,nt-1);
+    [acf,lags,bounds] = autocorr(comp_surf,nt-1);
+    [acf_phase,lags_phase,bounds_phase] = autocorr(ph_surf,nt-1);
+    [acf,lags,bounds] = autocorr(comp_surf,nt-1);
+    
+    figure;
+    set(gcf,'Position',[100 100 1000 600])
+    plot(time*10^3,abs(acf_img),'r.--','MarkerSize',18),hold on
+    plot(time*10^3,abs(acf_phase),'b.--','MarkerSize',18),
+    plot(time*10^3,abs(acf),'k.--','MarkerSize',18),
+    xlim([0 .5])
+    xlabel('lags (time (ms))')
+    ylabel('autocorrelation (r)')
+    title('autocorrelation function')
+    legend('real', 'phase','complex')
+    
+    saveas(gcf,[filename(1:end-4),'_fig3.png'])
+    
+    
+    %close all
 end

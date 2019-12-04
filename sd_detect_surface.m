@@ -6,7 +6,6 @@ function surface_z = sd_detect_surface(img, img_xz, windowlength, maxjump, minse
     % Storage for outputs
     [nz, nt, nx] = size(img);
 
-
     % Preprocessing - median filter in axial direction
     for j = 1:nx 
         filtered_line = medfilt1(img_xz(:,j), 5);
