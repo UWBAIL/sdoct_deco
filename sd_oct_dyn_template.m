@@ -14,9 +14,9 @@ rawname='t';
 % A-Line scan rate (set on camera/LabView)
 fs=90000;
 % # of X-positions 
-linenum=800;
+linenum=550;
 % # of TIME positions
-framenum=800;
+framenum=550;
 % # of active pixels on line-scan camera
 pixel=2048;
 % OCT calibration coefficients (dispersion compensation)
@@ -50,7 +50,7 @@ end;
 fn=fn-1;
 
 % Begin main loop
-for fileloop=[7]
+for fileloop=[1,2]
     clear Frame phframe phframe_c
     close all;
     clc;
@@ -100,7 +100,8 @@ for fileloop=[7]
     
     % Plot the surface detection
     figure;
-    subplot(211),imagesc(img_xz),hold on, plot(surface_z,'r.','MarkerSize',10)
+    subplot(211),imagesc(img_xz),hold on,
+    plot(surface_z,'r--','MarkerSize',8)
     xlabel('x (pixels)')
     ylabel('z (pixels)')
     subplot(234),plot(img_xz(:,1),z*10^3),set(gca,'Ydir','reverse'),
@@ -109,67 +110,66 @@ for fileloop=[7]
     xlabel('log compressed intensity (a.u.)')
     subplot(236),plot(img_xz(:,3),z*10^3),set(gca,'Ydir','reverse'),
     suptitle('test surface detection')
-    %saveas(gcf,[filename(1:end-4),'_fig1.png'])
+    saveas(gcf,[filename(1:end-4),'_fig1.png'])
     
-    %% Compute Intensity Variation
-    %chose surface location. Will probably do some averaging here later
-    img_surf=squeeze(img(surface,xloc,:));
+    %% Compute Intensity/Phase/Complex Variation signals
     
-    %FIR differentiator
-    imgdif = img_surf - circshift(img_surf, -frameshift);
-    imgdifs=imgdif;
-    %chose surface location. Will probably do some averaging here later
-    %imgdifs=imgdif(surface,:,xloc);
+    % intensity array is stored in img
+    % complex data array is stored in FRAME
     
-%     %FIR differentiator
-%     imgdif = img - circshift(img, -frameshift, 2);
-%     %chose surface location. Will probably do some averaging here later
-%     imgdifs=imgdif(surface,:,xloc);
+    % calculate phase signal for ENTIRE array
+    phraw = angle(Frame);
     
-    % calculate variance metrics
-    stdevimg=std(imgdifs);
-    avgimg = moment(imgdifs,1);
-    varianceimg= moment(imgdifs,2);
-      
-    %% Compute Phase Variation
-    %raw phase signal
-    %phraw = angle(Frame);
-    phraw = angle(squeeze(Frame(surface,xloc,:)));
-    phraw(phraw > pi) = phraw(phraw > pi) - 2*pi;
-    phraw(phraw < -pi) = phraw(phraw < -pi) + 2*pi;
-    %ph(:, (nt-frameshift+1):nt, :) = 0;
-    phraw((nt-frameshift+1):nt, :) = 0;
+    %chose  signal at a SINGLE location, for all times. defined by xloc - NEED TO EXPAND
+    img_surf=squeeze(img(surface,xloc,:)); % intensity
+    phraw_surf = squeeze(phraw(surface,xloc,:)); % phase 
+    Frame_surf=squeeze(Frame(surface,xloc,:));   % complex
+
+    %FIR differentiator on ENTIRE array- this give intensity, phase,
+    %complex difference
+    
+    % intensity difference
+    imgdif = img - circshift(img, -frameshift, 2);
     
     % phase difference with basic unwrapping
     %ph = angle(Frame) - circshift(angle(Frame), -frameshift, 2);% Compute phase difference from OCT complex data
-    ph = (phraw) - circshift((phraw), -frameshift);% Compute phase difference from OCT complex data
-    ph(ph > pi) = ph(ph > pi) - 2*pi;
-    ph(ph < -pi) = ph(ph < -pi) + 2*pi;
-    %ph(:, (nt-frameshift+1):nt, :) = 0;
-    ph((nt-frameshift+1):nt, :) = 0;
+    phdif =phraw - circshift(phraw, -frameshift);% Compute phase difference from OCT complex data
+%     % unwrap to make sure there are no phase jumps >pi
+%     phdif(phdif > pi) = phdif(phdif > pi) - 2*pi;
+%     phdif(phdif < -pi) = phdif(phdif < -pi) + 2*pi;
+%     %ph(:, (nt-frameshift+1):nt, :) = 0;
+%     phdif((nt-frameshift+1):nt, :) = 0;
+    
+    % complex difference for ENTIRE array
+    compdif = Frame - circshift(Frame, -frameshift, 2);
 
+    %chose differential signal at a SINGLE location, for all times. defined by xloc - NEED TO EXPAND
+    imgdif_surf=squeeze(imgdif(surface,xloc,:));
+    phdif_surf=squeeze(phdif(surface,xloc,:));
+    comp_surf=squeeze(compdif(surface,xloc,:));
+    comp_surfi=imag(comp_surf); % imaginary complex array
+    comp_surfr=real(comp_surf); % real complex array
     
-    %chose surface location. Will probably do some averaging here later
-%    phraw_surf=phraw(surface,:,xloc);
-    phraw_surf=phraw;
-    %ph_surf=ph(surface,:,xloc);
-    ph_surf=ph;
+    % calculate variance metrics (intensity)
+    stdevimg=std(imgdif_surf);
+    avgimg = moment(imgdif_surf,1);
+    varianceimg= moment(imgdif_surf,2);
+     
+    %calculate variance metrics (phase)
+    stdev=std(phdif_surf);
+    avg = moment(phdif_surf,1);
+    variance= moment(phdif_surf,2);
     
-    %calculate variance metrics
-    stdev=std(ph_surf);
-    avg = moment(ph_surf,1);
-    variance= moment(ph_surf,2);
-    
-    
-    %% Compute complex data (need to re-visit/expand this section)
-    Frame_surf=Frame(surface,:,xloc);
-    %comp = Frame - circshift(Frame, -frameshift, 2);
-    comp = Frame_surf - circshift(Frame_surf, -frameshift);
-    comp_surf=comp;%(surface,:,xloc);
-    comp_surfi=imag(comp_surf);
-    comp_surfr=real(comp_surf);
     
     %% Make Plots of signal histogram distributions
+    %note, for certain types of motion, we would expect certain distributions here.
+    % For a static surface (mirror), we will expect a mean of 0 and a normal distribtuion.
+    % For Brownian motion, I think that you would also expect a mean
+    % zero-normal distribution, with the amount of motion encoded in the 1st moment,
+    %(standard deviation). 
+    %See : Kim, Chang Soo et al. “Imaging and quantifying Brownian motion of micro- and nanoparticles using phase-resolved Doppler variance optical coherence tomography.” Journal of biomedical optics vol. 18,3 (2013): 030504. doi:10.1117/1.JBO.18.3.030504 
+    
+    % array of samples in time to unit of (s)
     time=(1:nt)*1/fs;
 
     fig1=figure;
@@ -179,28 +179,30 @@ for fileloop=[7]
     yyaxis left
     plot(time*10^3,img_surf*1000,'b.'),hold on,
     yyaxis right
-    plot(time*10^3,imgdifs*1000,'r.')
+    plot(time*10^3,imgdif_surf*1000,'r.')
     %ylim([-7 7])
     xlabel('time (ms)')
     ylabel('log comp intensity (a.u.)')
     legend('intensity signal','intensity difference')
     
     subplot(234)
-    histogram(imgdifs*1000)
+    histogram(imgdif_surf*1000)
     xlabel('log comp intensity (a.u.)')
     ylabel('counts')
     title(['[mean, stdev, variance] = [',num2str(avgimg*10^3),' , ',num2str(stdevimg*10^3),' , ',num2str(varianceimg*10^3),'] (a.u.)'])
     
     % Plot Phase Signal
     subplot(232)
-    plot(time*10^3,phraw_surf,'b.'),hold on,plot(time*10^3,ph_surf,'r.')
+    plot(time*10^3,phraw_surf,'b.'),
+    hold on,
+    plot(time*10^3,phdif_surf,'r.')
     ylim([-3.14 3.14])
     legend('phase signal','phase difference')
     xlabel('time (ms)')
     ylabel('phase (rad)')
     
     subplot(235)
-    histogram(ph_surf),
+    histogram(phdif_surf),
     xlabel('phase (rad)')
     ylabel('counts')
     title(['[mean, stdev, variance] = [',num2str(avg*10^3),' , ',num2str(stdev*10^3),' , ',num2str(variance*10^3),'] mrad'])
@@ -221,15 +223,14 @@ for fileloop=[7]
     title(cm,'counts')
     saveas(gcf,[filename(1:end-4),'_fig2.png'])
     
-     %% Simple example to calculate decorrelation statistics
+    %% Simple example to calculate decorrelation statistics
     %we will need to greatly expand the processing in this section. This
     %simply gives us an idea of where to start.....
     
-    %time- dependent complex-valued autocorrelation of the signal
-    [acf_img,lags_img,bounds_img] = autocorr(imgdifs,nt-1);
-    [acf,lags,bounds] = autocorr(comp_surf,nt-1);
-    [acf_phase,lags_phase,bounds_phase] = autocorr(ph_surf,nt-1);
-    [acf,lags,bounds] = autocorr(comp_surf,nt-1);
+    %time- dependent autocorrelation of the signal
+    [acf_img,lags_img,bounds_img] = autocorr(imgdif_surf,nt-1); %intensity
+    [acf,lags,bounds] = autocorr(comp_surf,nt-1); %complex
+    [acf_phase,lags_phase,bounds_phase] = autocorr(phdif_surf,nt-1); %phase
     
     figure;
     set(gcf,'Position',[100 100 1000 600])
